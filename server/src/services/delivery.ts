@@ -4,7 +4,7 @@
  * Add Kafka + Redis-backed dedup when moving to production multi-server.
  */
 import { Server } from 'socket.io';
-import { prisma } from '../db';
+import { Message } from '../models';
 
 const ACK_TIMEOUT_MS = 10_000;
 const MAX_RETRIES = 3;
@@ -45,17 +45,11 @@ export async function handleMessageAck(messageId: string): Promise<void> {
     pendingAcks.delete(messageId);
   }
 
-  await prisma.message.update({
-    where: { id: messageId },
-    data: { deliveredAt: new Date() },
-  });
+  await Message.findByIdAndUpdate(messageId, { deliveredAt: new Date() });
 }
 
 export async function handleReadReceipt(messageId: string): Promise<void> {
-  await prisma.message.update({
-    where: { id: messageId },
-    data: { readAt: new Date() },
-  });
+  await Message.findByIdAndUpdate(messageId, { readAt: new Date() });
 }
 
 export function cleanupPendingAcks(): void {

@@ -1,5 +1,7 @@
 import { Request, Response } from 'express';
-import { prisma } from '../db';
+import { Types } from 'mongoose';
+import { CaseChat, Message } from '../models';
+import { toWireCaseChat, toWireMessage } from '../utils/wireFormat';
 
 export async function registerCase(req: Request, res: Response): Promise<void> {
   const { caseId, customerId, caseManagerId } = req.body as {
@@ -13,41 +15,37 @@ export async function registerCase(req: Request, res: Response): Promise<void> {
     return;
   }
 
-  const existing = await prisma.caseChat.findUnique({ where: { caseId } });
-  if (existing) {
-    res.json({ data: existing });
+  if (![caseId, customerId, caseManagerId].every(Types.ObjectId.isValid)) {
+    res.status(400).json({ error: 'caseId, customerId, and caseManagerId must be valid ids' });
     return;
   }
 
-  const caseChat = await prisma.caseChat.create({
-    data: { caseId, customerId, caseManagerId },
-  });
+  const existing = await CaseChat.findOne({ caseId });
+  if (existing) {
+    res.json({ data: toWireCaseChat(existing) });
+    return;
+  }
 
-  res.status(201).json({ data: caseChat });
+  const caseChat = await CaseChat.create({ caseId, customerId, caseManagerId });
+  res.status(201).json({ data: toWireCaseChat(caseChat) });
 }
 
 export async function getCases(req: Request, res: Response): Promise<void> {
   const userId = req.user!.userId;
 
-  const cases = await prisma.caseChat.findMany({
-    where: {
-      OR: [{ customerId: userId }, { caseManagerId: userId }],
-    },
-    include: {
-      messages: {
-        where: { isDeleted: false },
-        orderBy: { createdAt: 'desc' },
-        take: 1,
-      },
-    },
-    orderBy: { createdAt: 'desc' },
-  });
+  const chats = await CaseChat.find({
+    $or: [{ customerId: userId }, { caseManagerId: userId }],
+  }).sort({ createdAt: -1 });
 
-  // Attach caseId to each message so clients can route without a lookup
-  const data = cases.map(c => ({
-    ...c,
-    messages: c.messages.map(m => ({ ...m, caseId: c.caseId })),
-  }));
+  const data = await Promise.all(
+    chats.map(async (chat) => {
+      const lastMessage = await Message.findOne({ caseChatId: chat._id, isDeleted: false }).sort({ createdAt: -1 });
+      return {
+        ...toWireCaseChat(chat),
+        messages: lastMessage ? [toWireMessage(lastMessage, chat.caseId.toString())] : [],
+      };
+    }),
+  );
 
   res.json({ data });
 }
@@ -58,29 +56,34 @@ export async function getCaseMessages(req: Request, res: Response): Promise<void
   const cursor = req.query.cursor as string | undefined;
   const limit = Math.min(Number(req.query.limit) || 50, 100);
 
-  const caseChat = await prisma.caseChat.findUnique({ where: { caseId } });
+  if (!Types.ObjectId.isValid(caseId)) {
+    res.status(404).json({ error: 'Case not found' });
+    return;
+  }
+
+  const caseChat = await CaseChat.findOne({ caseId });
   if (!caseChat) {
     res.status(404).json({ error: 'Case not found' });
     return;
   }
 
-  if (caseChat.customerId !== userId && caseChat.caseManagerId !== userId) {
+  if (caseChat.customerId.toString() !== userId && caseChat.caseManagerId.toString() !== userId) {
     res.status(403).json({ error: 'Access denied' });
     return;
   }
 
-  const messages = await prisma.message.findMany({
-    where: {
-      caseChatId: caseChat.id,
-      isDeleted: false,
-      ...(cursor ? { createdAt: { lt: new Date(cursor) } } : {}),
-    },
-    orderBy: { createdAt: 'desc' },
-    take: limit,
-  });
+  const messages = await Message.find({
+    caseChatId: caseChat._id,
+    isDeleted: false,
+    ...(cursor ? { createdAt: { $lt: new Date(cursor) } } : {}),
+  })
+    .sort({ createdAt: -1 })
+    .limit(limit);
+
+  const ordered = messages.slice().reverse();
 
   res.json({
-    data: messages.reverse().map(m => ({ ...m, caseId })),
+    data: ordered.map((m) => toWireMessage(m, caseId)),
     meta: {
       nextCursor: messages.length === limit ? messages[messages.length - 1].createdAt.toISOString() : null,
     },
@@ -91,25 +94,26 @@ export async function markCaseRead(req: Request, res: Response): Promise<void> {
   const { caseId } = req.params;
   const userId = req.user!.userId;
 
-  const caseChat = await prisma.caseChat.findUnique({ where: { caseId } });
+  if (!Types.ObjectId.isValid(caseId)) {
+    res.status(404).json({ error: 'Case not found' });
+    return;
+  }
+
+  const caseChat = await CaseChat.findOne({ caseId });
   if (!caseChat) {
     res.status(404).json({ error: 'Case not found' });
     return;
   }
 
-  if (caseChat.customerId !== userId && caseChat.caseManagerId !== userId) {
+  if (caseChat.customerId.toString() !== userId && caseChat.caseManagerId.toString() !== userId) {
     res.status(403).json({ error: 'Access denied' });
     return;
   }
 
-  await prisma.message.updateMany({
-    where: {
-      caseChatId: caseChat.id,
-      senderId: { not: userId },
-      readAt: null,
-    },
-    data: { readAt: new Date() },
-  });
+  await Message.updateMany(
+    { caseChatId: caseChat._id, senderId: { $ne: userId }, readAt: null },
+    { readAt: new Date() },
+  );
 
   res.json({ data: { success: true } });
 }

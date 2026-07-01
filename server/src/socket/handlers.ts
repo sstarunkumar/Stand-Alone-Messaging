@@ -1,5 +1,7 @@
 import { Server, Socket } from 'socket.io';
-import { prisma } from '../db';
+import { Types } from 'mongoose';
+import { CaseChat, Message } from '../models';
+import { toWireMessage } from '../utils/wireFormat';
 import { markUserOnline, markUserOffline } from '../services/presence';
 import { handleMessageAck, handleReadReceipt } from '../services/delivery';
 
@@ -11,7 +13,7 @@ interface SendMessagePayload {
 }
 
 export function registerSocketHandlers(io: Server, socket: Socket): void {
-  const { userId, role } = socket.data as { userId: string; role: string };
+  const { userId, role } = socket.data as { userId: string; role: 'CUSTOMER' | 'CASE_MANAGER' };
 
   socket.join(`user:${userId}`);
   markUserOnline(userId, socket.id);
@@ -20,7 +22,12 @@ export function registerSocketHandlers(io: Server, socket: Socket): void {
 
   socket.on('join-case', async (caseId: string, callback?: (res: unknown) => void) => {
     try {
-      const caseChat = await prisma.caseChat.findUnique({ where: { caseId } });
+      if (!Types.ObjectId.isValid(caseId)) {
+        callback?.({ error: 'Case not found' });
+        return;
+      }
+
+      const caseChat = await CaseChat.findOne({ caseId });
 
       if (!caseChat) {
         socket.emit('error', { code: 'CASE_NOT_FOUND', message: 'Case does not exist' });
@@ -28,7 +35,7 @@ export function registerSocketHandlers(io: Server, socket: Socket): void {
         return;
       }
 
-      if (caseChat.customerId !== userId && caseChat.caseManagerId !== userId) {
+      if (caseChat.customerId.toString() !== userId && caseChat.caseManagerId.toString() !== userId) {
         socket.emit('error', { code: 'ACCESS_DENIED', message: 'You are not a participant in this case' });
         callback?.({ error: 'Access denied' });
         return;
@@ -51,47 +58,46 @@ export function registerSocketHandlers(io: Server, socket: Socket): void {
     try {
       const { caseId, content, type = 'TEXT', tempId } = payload;
 
-      if (!caseId || !content?.trim()) {
+      if (!caseId || !content?.trim() || !Types.ObjectId.isValid(caseId)) {
         callback?.({ error: 'caseId and content are required' });
         return;
       }
 
-      const caseChat = await prisma.caseChat.findUnique({ where: { caseId } });
+      const caseChat = await CaseChat.findOne({ caseId });
 
       if (!caseChat) {
         callback?.({ error: 'Case not found' });
         return;
       }
 
-      if (caseChat.customerId !== userId && caseChat.caseManagerId !== userId) {
+      if (caseChat.customerId.toString() !== userId && caseChat.caseManagerId.toString() !== userId) {
         callback?.({ error: 'Access denied' });
         return;
       }
 
-      const message = await prisma.message.create({
-        data: {
-          caseChatId: caseChat.id,
-          senderId: userId,
-          senderRole: role,
-          content: content.trim(),
-          type,
-        },
+      const message = await Message.create({
+        caseChatId: caseChat._id,
+        senderId: userId,
+        senderType: role,
+        body: content.trim(),
+        type,
       });
 
       // Always attach caseId so clients can route the message without a DB lookup
-      const payload = { ...message, caseId };
+      const wireMessage = toWireMessage(message, caseId);
 
       // Confirm to sender — client replaces its optimistic temp message
-      callback?.({ success: true, message: payload, tempId });
+      callback?.({ success: true, message: wireMessage, tempId });
 
       // Broadcast to all others in the case room (recipient sees it in real-time)
-      socket.to(`case:${caseId}`).emit('new-message', payload);
+      socket.to(`case:${caseId}`).emit('new-message', wireMessage);
 
       // Also push to recipient's personal room so notifications land even if they're not in the case view
-      const recipientId = caseChat.customerId === userId ? caseChat.caseManagerId : caseChat.customerId;
-      socket.to(`user:${recipientId}`).emit('new-message', payload);
+      const recipientId =
+        caseChat.customerId.toString() === userId ? caseChat.caseManagerId.toString() : caseChat.customerId.toString();
+      socket.to(`user:${recipientId}`).emit('new-message', wireMessage);
 
-      console.log(`[ws]   msg ${message.id} in case:${caseId} from ${userId}`);
+      console.log(`[ws]   msg ${message._id.toString()} in case:${caseId} from ${userId}`);
     } catch (err) {
       console.error('[ws] send-message error:', err);
       callback?.({ error: 'Failed to send message' });
@@ -101,9 +107,9 @@ export function registerSocketHandlers(io: Server, socket: Socket): void {
   socket.on('message-ack', async (messageId: string) => {
     try {
       await handleMessageAck(messageId);
-      const message = await prisma.message.findUnique({ where: { id: messageId } });
+      const message = await Message.findById(messageId);
       if (message) {
-        io.to(`user:${message.senderId}`).emit('message-delivered', {
+        io.to(`user:${message.senderId.toString()}`).emit('message-delivered', {
           messageId,
           deliveredAt: message.deliveredAt,
         });
@@ -116,9 +122,9 @@ export function registerSocketHandlers(io: Server, socket: Socket): void {
   socket.on('message-read', async (messageId: string) => {
     try {
       await handleReadReceipt(messageId);
-      const message = await prisma.message.findUnique({ where: { id: messageId } });
+      const message = await Message.findById(messageId);
       if (message) {
-        io.to(`user:${message.senderId}`).emit('message-read', {
+        io.to(`user:${message.senderId.toString()}`).emit('message-read', {
           messageId,
           readAt: message.readAt,
         });

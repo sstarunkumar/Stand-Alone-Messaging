@@ -109,7 +109,7 @@ export default function CaseList({ cases, selectedCaseId, unreadByCaseId, curren
         <div style={{ padding: '10px 14px', borderBottom: '1px solid #e2e8f0', background: '#f8fafc' }}>
           <div style={{ fontSize: 11, fontWeight: 700, color: '#475569', marginBottom: 8, textTransform: 'uppercase', letterSpacing: 0.5 }}>New Case</div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            <input placeholder="Case ID (e.g. case_002)" value={formCaseId} onChange={e => setFormCaseId(e.target.value)} style={miniInput} />
+            <input placeholder="Case ID (Mongo ObjectId, e.g. 000000000000000000000005)" value={formCaseId} onChange={e => setFormCaseId(e.target.value)} style={miniInput} />
             <input placeholder="Customer ID" value={formCustomerId} onChange={e => setFormCustomerId(e.target.value)} style={miniInput} />
             <input placeholder="Case Manager ID" value={formManagerId} onChange={e => setFormManagerId(e.target.value)} style={miniInput} />
             {formError && <div style={{ fontSize: 11, color: '#dc2626' }}>{formError}</div>}
