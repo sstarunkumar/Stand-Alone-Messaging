@@ -1,0 +1,38 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  // Change provider to "postgresql" and update DATABASE_URL when moving to Neon
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model CaseChat {
+  id            String    @id @default(cuid())
+  caseId        String    @unique
+  customerId    String
+  caseManagerId String
+  createdAt     DateTime  @default(now())
+  messages      Message[]
+
+  @@index([customerId])
+  @@index([caseManagerId])
+}
+
+model Message {
+  id          String    @id @default(cuid())
+  caseChatId  String
+  caseChat    CaseChat  @relation(fields: [caseChatId], references: [id])
+  senderId    String
+  senderRole  String    // CUSTOMER | CASE_MANAGER
+  content     String
+  type        String    @default("TEXT") // TEXT | FILE | IMAGE
+  deliveredAt DateTime?
+  readAt      DateTime?
+  isDeleted   Boolean   @default(false)
+  createdAt   DateTime  @default(now())
+
+  @@index([caseChatId])
+  @@index([senderId])
+}
