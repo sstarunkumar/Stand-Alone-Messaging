@@ -248,7 +248,11 @@ export default function UserPanel({ panelRole, defaultUserId, accentColor, label
 
     const caseIdAtSend = selectedCaseId;
     setMessagesByCaseId(prev => ({ ...prev, [caseIdAtSend]: [...(prev[caseIdAtSend] ?? []), optimistic] }));
-    setCases(prev => prev.map(c => c.caseId === caseIdAtSend ? { ...c, messages: [optimistic] } : c));
+    // Bump immediately on send (not just on receive) so outgoing messages float the
+    // conversation to the top too — this is a pure client-side reorder of the `cases`
+    // array already in memory, no refetch. The optimistic timestamp is "now", so it's
+    // always the most-recent — bumping to index 0 IS the correct sorted position.
+    setCases(prev => bumpToTop(prev.map(c => c.caseId === caseIdAtSend ? { ...c, messages: [optimistic] } : c), caseIdAtSend, optimistic.createdAt));
 
     socket.emit('send-message', { caseId: caseIdAtSend, content: content.trim(), tempId },
       (res: { success?: boolean; message?: Message; tempId?: string; error?: string }) => {
@@ -257,7 +261,9 @@ export default function UserPanel({ panelRole, defaultUserId, accentColor, label
             ...prev,
             [caseIdAtSend]: (prev[caseIdAtSend] ?? []).map(m => m.id === tempId ? res.message! : m),
           }));
-          setCases(prev => prev.map(c => c.caseId === caseIdAtSend ? { ...c, messages: [res.message!] } : c));
+          // Re-bump with the server-confirmed timestamp; already at the top from the
+          // optimistic bump above, so this just reconciles the preview/messages data.
+          setCases(prev => bumpToTop(prev.map(c => c.caseId === caseIdAtSend ? { ...c, messages: [res.message!] } : c), caseIdAtSend, res.message!.createdAt));
         } else {
           setMessagesByCaseId(prev => ({
             ...prev,
