@@ -21,7 +21,7 @@ export function toWireMessage(msg: IMessage, caseId: string) {
   };
 }
 
-export function toWireCaseChat(chat: ICaseChat, caseNumber?: string) {
+export function toWireCaseChat(chat: ICaseChat, caseNumber?: string, unreadCount?: number) {
   return {
     id: chat._id.toString(),
     caseId: chat.caseId.toString(),
@@ -29,6 +29,7 @@ export function toWireCaseChat(chat: ICaseChat, caseNumber?: string) {
     customerId: chat.customerId.toString(),
     caseManagerId: chat.caseManagerId.toString(),
     lastMessageAt: chat.lastMessageAt,
+    unreadCount: unreadCount ?? 0,
     createdAt: chat.createdAt,
   };
 }

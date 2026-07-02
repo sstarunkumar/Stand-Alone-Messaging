@@ -26,6 +26,7 @@ export interface CaseItem {
   customerId: string;
   caseManagerId: string;
   lastMessageAt: string | null;
+  unreadCount: number;
   createdAt: string;
   messages: Message[];
 }
@@ -90,6 +91,16 @@ export default function UserPanel({ panelRole, defaultUserId, accentColor, label
       resolvedUserIdRef.current = auth.userId;
 
       const caseList = await refreshCases(token);
+
+      // Seed unread counts from server truth (messages that arrived while logged out
+      // are still unread in the DB) — don't start every case at 0 just because this
+      // session hasn't seen a live socket event for it yet.
+      setUnreadByCaseId(
+        caseList.reduce<Record<string, number>>((acc, c) => {
+          if (c.unreadCount > 0) acc[c.caseId] = c.unreadCount;
+          return acc;
+        }, {}),
+      );
 
       const socket = io(API_URL, { auth: { token }, transports: ['websocket', 'polling'] });
 

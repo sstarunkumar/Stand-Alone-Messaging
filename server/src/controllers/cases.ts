@@ -54,9 +54,14 @@ export async function getCases(req: Request, res: Response): Promise<void> {
 
   const data = await Promise.all(
     chats.map(async (chat) => {
-      const lastMessage = await Message.findOne({ caseChatId: chat._id, isDeleted: false }).sort({ createdAt: -1 });
+      // Two small indexed lookups per chat (last message + unread count) — no full
+      // history fetch, no cross-user scans. Both hit the {caseChatId, readAt} index.
+      const [lastMessage, unreadCount] = await Promise.all([
+        Message.findOne({ caseChatId: chat._id, isDeleted: false }).sort({ createdAt: -1 }),
+        Message.countDocuments({ caseChatId: chat._id, senderId: { $ne: userId }, readAt: null, isDeleted: false }),
+      ]);
       return {
-        ...toWireCaseChat(chat, casesById.get(chat.caseId.toString())),
+        ...toWireCaseChat(chat, casesById.get(chat.caseId.toString()), unreadCount),
         messages: lastMessage ? [toWireMessage(lastMessage, chat.caseId.toString())] : [],
       };
     }),
