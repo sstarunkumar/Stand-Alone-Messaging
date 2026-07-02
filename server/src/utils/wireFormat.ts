@@ -21,12 +21,14 @@ export function toWireMessage(msg: IMessage, caseId: string) {
   };
 }
 
-export function toWireCaseChat(chat: ICaseChat) {
+export function toWireCaseChat(chat: ICaseChat, caseNumber?: string) {
   return {
     id: chat._id.toString(),
     caseId: chat.caseId.toString(),
+    caseNumber: caseNumber ?? null,
     customerId: chat.customerId.toString(),
     caseManagerId: chat.caseManagerId.toString(),
+    lastMessageAt: chat.lastMessageAt,
     createdAt: chat.createdAt,
   };
 }

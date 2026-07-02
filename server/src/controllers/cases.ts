@@ -1,33 +1,41 @@
 import { Request, Response } from 'express';
 import { Types } from 'mongoose';
-import { CaseChat, Message } from '../models';
+import { Case, CaseChat, Message } from '../models';
 import { toWireCaseChat, toWireMessage } from '../utils/wireFormat';
+import { resolveTestId } from '../testAliases';
 
 export async function registerCase(req: Request, res: Response): Promise<void> {
-  const { caseId, customerId, caseManagerId } = req.body as {
+  const { caseId: rawCaseId, customerId: rawCustomerId, caseManagerId: rawCaseManagerId } = req.body as {
     caseId?: string;
     customerId?: string;
     caseManagerId?: string;
   };
 
-  if (!caseId || !customerId || !caseManagerId) {
+  if (!rawCaseId || !rawCustomerId || !rawCaseManagerId) {
     res.status(400).json({ error: 'caseId, customerId, and caseManagerId are required' });
     return;
   }
 
+  // Test aliases (case1, cust1, cm1, ...) resolve to their real seeded ids.
+  const caseId = resolveTestId(rawCaseId);
+  const customerId = resolveTestId(rawCustomerId);
+  const caseManagerId = resolveTestId(rawCaseManagerId);
+
   if (![caseId, customerId, caseManagerId].every(Types.ObjectId.isValid)) {
-    res.status(400).json({ error: 'caseId, customerId, and caseManagerId must be valid ids' });
+    res.status(400).json({ error: 'caseId, customerId, and caseManagerId must be valid ids or known aliases' });
     return;
   }
 
+  const caseDoc = await Case.findById(caseId, 'caseNumber');
+
   const existing = await CaseChat.findOne({ caseId });
   if (existing) {
-    res.json({ data: toWireCaseChat(existing) });
+    res.json({ data: toWireCaseChat(existing, caseDoc?.caseNumber) });
     return;
   }
 
   const caseChat = await CaseChat.create({ caseId, customerId, caseManagerId });
-  res.status(201).json({ data: toWireCaseChat(caseChat) });
+  res.status(201).json({ data: toWireCaseChat(caseChat, caseDoc?.caseNumber) });
 }
 
 export async function getCases(req: Request, res: Response): Promise<void> {
@@ -35,13 +43,20 @@ export async function getCases(req: Request, res: Response): Promise<void> {
 
   const chats = await CaseChat.find({
     $or: [{ customerId: userId }, { caseManagerId: userId }],
-  }).sort({ createdAt: -1 });
+  }).sort({ lastMessageAt: -1, createdAt: -1 });
+
+  const casesById = new Map(
+    (await Case.find({ _id: { $in: chats.map((c) => c.caseId) } }, 'caseNumber')).map((c) => [
+      c._id.toString(),
+      c.caseNumber,
+    ]),
+  );
 
   const data = await Promise.all(
     chats.map(async (chat) => {
       const lastMessage = await Message.findOne({ caseChatId: chat._id, isDeleted: false }).sort({ createdAt: -1 });
       return {
-        ...toWireCaseChat(chat),
+        ...toWireCaseChat(chat, casesById.get(chat.caseId.toString())),
         messages: lastMessage ? [toWireMessage(lastMessage, chat.caseId.toString())] : [],
       };
     }),
@@ -110,10 +125,18 @@ export async function markCaseRead(req: Request, res: Response): Promise<void> {
     return;
   }
 
+  const readAt = new Date();
   await Message.updateMany(
     { caseChatId: caseChat._id, senderId: { $ne: userId }, readAt: null },
-    { readAt: new Date() },
+    { readAt },
   );
+
+  // Notify whoever sent those messages that they've now been read, so their
+  // UI can flip to the "read" checkmark without polling.
+  const otherPartyId =
+    caseChat.customerId.toString() === userId ? caseChat.caseManagerId.toString() : caseChat.customerId.toString();
+  const io = req.app.get('io') as import('socket.io').Server | undefined;
+  io?.to(`user:${otherPartyId}`).emit('case-read', { caseId, readBy: userId, readAt: readAt.toISOString() });
 
   res.json({ data: { success: true } });
 }

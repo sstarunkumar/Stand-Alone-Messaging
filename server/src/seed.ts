@@ -1,69 +1,81 @@
 /**
- * Deterministic test-data seed. Fixed ObjectIds so the test harness
- * (test-harness/src/App.tsx) can hardcode matching default user/case ids.
- * Safe to re-run: upserts by _id.
+ * Deterministic test-data seed: 4 customers, 4 case managers, and 2-3 cases
+ * per customer (10 total), each with its own CaseChat. Login with the alias
+ * names printed below (cust1..cust4, cm1..cm4) — routes/auth.ts resolves
+ * them to the real ObjectIds created here. Safe to re-run: upserts by _id.
  */
 import 'dotenv/config';
-import { Types } from 'mongoose';
 import { connectDb, disconnectDb } from './db';
 import { Role, Service, User, AdminUser, Case, CaseChat } from './models';
+import { CASE_STATUSES } from './models/enums';
+import { CASE_ALIASES, CUSTOMER_ALIASES, MANAGER_ALIASES, USER_ALIASES, hexId } from './testAliases';
 
-export const SEED_ROLE_ID = new Types.ObjectId('000000000000000000000001');
-export const SEED_SERVICE_ID = new Types.ObjectId('000000000000000000000002');
-export const SEED_CUSTOMER_ID = new Types.ObjectId('000000000000000000000003');
-export const SEED_CASE_MANAGER_ID = new Types.ObjectId('000000000000000000000004');
-export const SEED_CASE_ID = new Types.ObjectId('000000000000000000000005');
+const ROLE_ID = hexId(1);
+const SERVICE_ID = hexId(2);
 
 async function seed(): Promise<void> {
   await connectDb();
 
   await Role.findByIdAndUpdate(
-    SEED_ROLE_ID,
+    ROLE_ID,
     { name: 'Case Manager', description: 'Handles assigned cases' },
     { upsert: true, setDefaultsOnInsert: true },
   );
 
   await Service.findByIdAndUpdate(
-    SEED_SERVICE_ID,
+    SERVICE_ID,
     { code: 'LAND-NOC', name: 'Land NOC Verification', domain: 'LAND', status: 'ACTIVE', isActive: true },
     { upsert: true, setDefaultsOnInsert: true },
   );
 
-  await User.findByIdAndUpdate(
-    SEED_CUSTOMER_ID,
-    { email: 'customer001@example.com', phone: '+910000000001', isActive: true },
-    { upsert: true, setDefaultsOnInsert: true },
-  );
+  for (const alias of CUSTOMER_ALIASES) {
+    await User.findByIdAndUpdate(
+      USER_ALIASES[alias].id,
+      { email: `${alias}@example.com`, phone: '+910000000000', isActive: true },
+      { upsert: true, setDefaultsOnInsert: true },
+    );
+  }
 
-  await AdminUser.findByIdAndUpdate(
-    SEED_CASE_MANAGER_ID,
-    { email: 'manager001@example.com', roleId: SEED_ROLE_ID, regions: ['TELANGANA'], isActive: true },
-    { upsert: true, setDefaultsOnInsert: true },
-  );
+  for (const alias of MANAGER_ALIASES) {
+    await AdminUser.findByIdAndUpdate(
+      USER_ALIASES[alias].id,
+      { email: `${alias}@example.com`, roleId: ROLE_ID, regions: ['TELANGANA'], isActive: true },
+      { upsert: true, setDefaultsOnInsert: true },
+    );
+  }
 
-  await Case.findByIdAndUpdate(
-    SEED_CASE_ID,
-    {
-      caseNumber: 'CASE-0001',
-      userId: SEED_CUSTOMER_ID,
-      serviceId: SEED_SERVICE_ID,
-      kind: 'LAND_NOC',
-      status: 'IN_PROGRESS',
-      assignedManagerId: SEED_CASE_MANAGER_ID,
-    },
-    { upsert: true, setDefaultsOnInsert: true },
-  );
+  for (const [i, testCase] of CASE_ALIASES.entries()) {
+    const customerId = USER_ALIASES[testCase.customerAlias].id;
+    const managerId = USER_ALIASES[testCase.managerAlias].id;
+    const status = CASE_STATUSES[i % CASE_STATUSES.length];
 
-  await CaseChat.findOneAndUpdate(
-    { caseId: SEED_CASE_ID },
-    { caseId: SEED_CASE_ID, customerId: SEED_CUSTOMER_ID, caseManagerId: SEED_CASE_MANAGER_ID },
-    { upsert: true, setDefaultsOnInsert: true },
-  );
+    await Case.findByIdAndUpdate(
+      testCase.id,
+      {
+        caseNumber: `CASE-${testCase.alias.toUpperCase()}`,
+        userId: customerId,
+        serviceId: SERVICE_ID,
+        kind: 'LAND_NOC',
+        status,
+        assignedManagerId: managerId,
+      },
+      { upsert: true, setDefaultsOnInsert: true },
+    );
 
-  console.log('Seeded test data:');
-  console.log('  customer userId     :', SEED_CUSTOMER_ID.toString());
-  console.log('  case manager userId :', SEED_CASE_MANAGER_ID.toString());
-  console.log('  caseId              :', SEED_CASE_ID.toString());
+    await CaseChat.findOneAndUpdate(
+      { caseId: testCase.id },
+      { caseId: testCase.id, customerId, caseManagerId: managerId },
+      { upsert: true, setDefaultsOnInsert: true },
+    );
+  }
+
+  console.log('Seeded test data — log in to the test harness with these aliases:\n');
+  console.log('Customers:');
+  for (const alias of CUSTOMER_ALIASES) console.log(`  ${alias.padEnd(6)} (CUSTOMER)      -> ${USER_ALIASES[alias].id.toString()}`);
+  console.log('\nCase managers:');
+  for (const alias of MANAGER_ALIASES) console.log(`  ${alias.padEnd(6)} (CASE_MANAGER)  -> ${USER_ALIASES[alias].id.toString()}`);
+  console.log('\nCases:');
+  for (const c of CASE_ALIASES) console.log(`  ${c.alias.padEnd(6)} -> ${c.id.toString()}  customer=${c.customerAlias}  manager=${c.managerAlias}`);
 
   await disconnectDb();
 }

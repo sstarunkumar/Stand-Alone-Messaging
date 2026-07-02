@@ -22,8 +22,10 @@ export interface Message {
 export interface CaseItem {
   id: string;
   caseId: string;
+  caseNumber: string | null;
   customerId: string;
   caseManagerId: string;
+  lastMessageAt: string | null;
   createdAt: string;
   messages: Message[];
 }
@@ -48,13 +50,17 @@ export default function UserPanel({ panelRole, defaultUserId, accentColor, label
   const [typingByCaseId, setTypingByCaseId] = useState<Record<string, boolean>>({});
   const [loadingMessages, setLoadingMessages] = useState(false);
 
+  // userId holds whatever was typed at login (e.g. "cust1") — used only as the
+  // login field value and header label. All identity comparisons (mine/unread/
+  // read-receipts) must use the real id the server resolved the alias to.
+  const [resolvedUserId, setResolvedUserId] = useState('');
+
   const socketRef = useRef<Socket | null>(null);
   const tokenRef = useRef('');
-  const userIdRef = useRef(userId);
+  const resolvedUserIdRef = useRef('');
   const selectedCaseIdRef = useRef<string | null>(null);
   const messagesByCaseIdRef = useRef<Record<string, Message[]>>({});
 
-  useEffect(() => { userIdRef.current = userId; }, [userId]);
   useEffect(() => { selectedCaseIdRef.current = selectedCaseId; }, [selectedCaseId]);
   useEffect(() => { messagesByCaseIdRef.current = messagesByCaseId; }, [messagesByCaseId]);
 
@@ -67,12 +73,21 @@ export default function UserPanel({ panelRole, defaultUserId, accentColor, label
     return list;
   }, []);
 
+  function bumpToTop(list: CaseItem[], caseId: string, lastMessageAt: string): CaseItem[] {
+    const rest = list.filter(c => c.caseId !== caseId);
+    const target = list.find(c => c.caseId === caseId);
+    if (!target) return list;
+    return [{ ...target, lastMessageAt }, ...rest];
+  }
+
   async function connect() {
     setStatusMsg('Connecting…');
     try {
       const { data: auth } = await axios.post(`${API_URL}/auth/token`, { userId, role });
       const token: string = auth.token;
       tokenRef.current = token;
+      setResolvedUserId(auth.userId);
+      resolvedUserIdRef.current = auth.userId;
 
       const caseList = await refreshCases(token);
 
@@ -89,7 +104,7 @@ export default function UserPanel({ panelRole, defaultUserId, accentColor, label
 
       socket.on('new-message', (msg: Message) => {
         const { caseId } = msg;
-        const currentUser = userIdRef.current;
+        const currentUser = resolvedUserIdRef.current;
         const currentCaseId = selectedCaseIdRef.current;
 
         setMessagesByCaseId(prev => {
@@ -98,8 +113,8 @@ export default function UserPanel({ panelRole, defaultUserId, accentColor, label
           return { ...prev, [caseId]: [...existing, msg] };
         });
 
-        // Update last-message preview in sidebar
-        setCases(prev => prev.map(c => c.caseId === caseId ? { ...c, messages: [msg] } : c));
+        // Update last-message preview and float the conversation to the top of the sidebar
+        setCases(prev => bumpToTop(prev.map(c => c.caseId === caseId ? { ...c, messages: [msg] } : c), caseId, msg.createdAt));
 
         socket.emit('message-ack', msg.id);
 
@@ -110,6 +125,18 @@ export default function UserPanel({ panelRole, defaultUserId, accentColor, label
             setUnreadByCaseId(prev => ({ ...prev, [caseId]: (prev[caseId] ?? 0) + 1 }));
           }
         }
+      });
+
+      socket.on('case-read', ({ caseId, readAt }: { caseId: string; readBy: string; readAt: string }) => {
+        // The other party just bulk-read our messages in this case — flip our sent messages to "read".
+        setMessagesByCaseId(prev => {
+          const existing = prev[caseId];
+          if (!existing) return prev;
+          return {
+            ...prev,
+            [caseId]: existing.map(m => (m.senderId === resolvedUserIdRef.current && !m.readAt ? { ...m, readAt } : m)),
+          };
+        });
       });
 
       socket.on('message-delivered', ({ messageId, deliveredAt }: { messageId: string; deliveredAt: string }) => {
@@ -165,6 +192,16 @@ export default function UserPanel({ panelRole, defaultUserId, accentColor, label
     resetAppState();
   }
 
+  async function markCaseReadOnServer(caseId: string) {
+    try {
+      await axios.put(`${API_URL}/api/cases/${caseId}/read`, {}, {
+        headers: { Authorization: `Bearer ${tokenRef.current}` },
+      });
+    } catch {
+      // Best-effort — the other party just won't see the read receipt live.
+    }
+  }
+
   async function selectCase(newCaseId: string) {
     const socket = socketRef.current;
     if (!socket) return;
@@ -177,6 +214,9 @@ export default function UserPanel({ panelRole, defaultUserId, accentColor, label
     setSelectedCaseId(newCaseId);
     setUnreadByCaseId(prev => ({ ...prev, [newCaseId]: 0 }));
 
+    const hasUnreadFromOthers = (msgs: Message[]) =>
+      msgs.some(m => m.senderId !== resolvedUserIdRef.current && !m.readAt);
+
     if (!messagesByCaseIdRef.current[newCaseId]) {
       setLoadingMessages(true);
       try {
@@ -185,15 +225,12 @@ export default function UserPanel({ panelRole, defaultUserId, accentColor, label
         });
         const msgs = data.data as Message[];
         setMessagesByCaseId(prev => ({ ...prev, [newCaseId]: msgs }));
-        msgs.filter(m => m.senderId !== userIdRef.current && !m.readAt)
-          .forEach(m => socket.emit('message-read', m.id));
+        if (hasUnreadFromOthers(msgs)) await markCaseReadOnServer(newCaseId);
       } finally {
         setLoadingMessages(false);
       }
-    } else {
-      messagesByCaseIdRef.current[newCaseId]
-        .filter(m => m.senderId !== userIdRef.current && !m.readAt)
-        .forEach(m => socket.emit('message-read', m.id));
+    } else if (hasUnreadFromOthers(messagesByCaseIdRef.current[newCaseId])) {
+      await markCaseReadOnServer(newCaseId);
     }
   }
 
@@ -204,7 +241,7 @@ export default function UserPanel({ panelRole, defaultUserId, accentColor, label
     const tempId = `temp_${Date.now()}`;
     const optimistic: Message = {
       id: tempId, caseChatId: '', caseId: selectedCaseId,
-      senderId: userId, senderRole: role,
+      senderId: resolvedUserId, senderRole: role,
       content: content.trim(), type: 'TEXT',
       deliveredAt: null, readAt: null, createdAt: new Date().toISOString(),
     };
@@ -258,7 +295,7 @@ export default function UserPanel({ panelRole, defaultUserId, accentColor, label
         <div style={{ padding: 24, maxWidth: 340, display: 'flex', flexDirection: 'column', gap: 12 }}>
           <div style={{ fontSize: 13, color: '#64748b', marginBottom: 4 }}>Sign in to access your case conversations</div>
           <Field label="User ID">
-            <input value={userId} onChange={e => setUserId(e.target.value)} style={inputCss} placeholder="e.g. customer_001" />
+            <input value={userId} onChange={e => setUserId(e.target.value)} style={inputCss} placeholder="e.g. cust1, cust2, cm1, cm2..." />
           </Field>
           <Field label="Role">
             <select value={role} onChange={e => setRole(e.target.value as 'CUSTOMER' | 'CASE_MANAGER')} style={inputCss}>
@@ -295,6 +332,7 @@ export default function UserPanel({ panelRole, defaultUserId, accentColor, label
           selectedCaseId={selectedCaseId}
           unreadByCaseId={unreadByCaseId}
           currentUserId={userId}
+          currentResolvedUserId={resolvedUserId}
           currentRole={role}
           accentColor={accentColor}
           onSelectCase={selectCase}
@@ -305,7 +343,8 @@ export default function UserPanel({ panelRole, defaultUserId, accentColor, label
             <ChatView
               key={selectedCaseId}
               caseId={selectedCaseId}
-              userId={userId}
+              caseTitle={cases.find(c => c.caseId === selectedCaseId)?.caseNumber ?? selectedCaseId}
+              userId={resolvedUserId}
               accentColor={accentColor}
               messages={messagesByCaseId[selectedCaseId] ?? []}
               isTyping={typingByCaseId[selectedCaseId] ?? false}

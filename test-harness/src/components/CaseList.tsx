@@ -29,13 +29,14 @@ interface Props {
   selectedCaseId: string | null;
   unreadByCaseId: Record<string, number>;
   currentUserId: string;
+  currentResolvedUserId: string;
   currentRole: 'CUSTOMER' | 'CASE_MANAGER';
   accentColor: string;
   onSelectCase: (caseId: string) => void;
   onAddCase: (caseId: string, customerId: string, caseManagerId: string) => Promise<{ success: boolean; error?: string }>;
 }
 
-export default function CaseList({ cases, selectedCaseId, unreadByCaseId, currentUserId, currentRole, accentColor, onSelectCase, onAddCase }: Props) {
+export default function CaseList({ cases, selectedCaseId, unreadByCaseId, currentUserId, currentResolvedUserId, currentRole, accentColor, onSelectCase, onAddCase }: Props) {
   const [search, setSearch] = useState('');
   const [showForm, setShowForm] = useState(false);
   const [formCaseId, setFormCaseId] = useState('');
@@ -44,8 +45,12 @@ export default function CaseList({ cases, selectedCaseId, unreadByCaseId, curren
   const [formError, setFormError] = useState('');
   const [adding, setAdding] = useState(false);
 
+  function caseTitle(c: CaseItem): string {
+    return c.caseNumber ?? c.caseId;
+  }
+
   const filtered = search.trim()
-    ? cases.filter(c => c.caseId.toLowerCase().includes(search.toLowerCase()))
+    ? cases.filter(c => caseTitle(c).toLowerCase().includes(search.toLowerCase()))
     : cases;
 
   async function handleAdd() {
@@ -109,9 +114,9 @@ export default function CaseList({ cases, selectedCaseId, unreadByCaseId, curren
         <div style={{ padding: '10px 14px', borderBottom: '1px solid #e2e8f0', background: '#f8fafc' }}>
           <div style={{ fontSize: 11, fontWeight: 700, color: '#475569', marginBottom: 8, textTransform: 'uppercase', letterSpacing: 0.5 }}>New Case</div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            <input placeholder="Case ID (Mongo ObjectId, e.g. 000000000000000000000005)" value={formCaseId} onChange={e => setFormCaseId(e.target.value)} style={miniInput} />
-            <input placeholder="Customer ID" value={formCustomerId} onChange={e => setFormCustomerId(e.target.value)} style={miniInput} />
-            <input placeholder="Case Manager ID" value={formManagerId} onChange={e => setFormManagerId(e.target.value)} style={miniInput} />
+            <input placeholder="Case ID (e.g. case1, case2, or an ObjectId)" value={formCaseId} onChange={e => setFormCaseId(e.target.value)} style={miniInput} />
+            <input placeholder="Customer ID (e.g. cust1)" value={formCustomerId} onChange={e => setFormCustomerId(e.target.value)} style={miniInput} />
+            <input placeholder="Case Manager ID (e.g. cm1)" value={formManagerId} onChange={e => setFormManagerId(e.target.value)} style={miniInput} />
             {formError && <div style={{ fontSize: 11, color: '#dc2626' }}>{formError}</div>}
             <div style={{ display: 'flex', gap: 6, marginTop: 2 }}>
               <button onClick={() => setShowForm(false)} style={{ ...miniBtn, background: '#e2e8f0', color: '#475569', flex: 1 }}>Cancel</button>
@@ -138,6 +143,7 @@ export default function CaseList({ cases, selectedCaseId, unreadByCaseId, curren
           const unread = unreadByCaseId[c.caseId] ?? 0;
           const isSelected = c.caseId === selectedCaseId;
           const [g1, g2] = avatarGradient(c.caseId);
+          const title = caseTitle(c);
 
           return (
             <div
@@ -159,13 +165,13 @@ export default function CaseList({ cases, selectedCaseId, unreadByCaseId, curren
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                 color: 'white', fontSize: 12, fontWeight: 700,
               }}>
-                {c.caseId.replace(/[^a-zA-Z0-9]/g, '').slice(0, 2).toUpperCase()}
+                {title.replace(/[^a-zA-Z0-9]/g, '').slice(0, 2).toUpperCase()}
               </div>
 
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 2 }}>
                   <span style={{ fontSize: 13, fontWeight: unread > 0 ? 700 : 500, color: '#0f172a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '70%' }}>
-                    {c.caseId}
+                    {title}
                   </span>
                   {lastMsg && (
                     <span style={{ fontSize: 10, color: '#94a3b8', flexShrink: 0 }}>
@@ -175,7 +181,7 @@ export default function CaseList({ cases, selectedCaseId, unreadByCaseId, curren
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <span style={{ fontSize: 11, color: unread > 0 ? '#475569' : '#94a3b8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, fontWeight: unread > 0 ? 500 : 400 }}>
-                    {lastMsgPreview(lastMsg, currentUserId)}
+                    {lastMsgPreview(lastMsg, currentResolvedUserId)}
                   </span>
                   {unread > 0 && (
                     <div style={{

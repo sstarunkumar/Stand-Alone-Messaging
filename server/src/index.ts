@@ -22,6 +22,8 @@ const io = new Server(httpServer, {
 
 app.use(cors({ origin: CLIENT_ORIGIN }));
 app.use(express.json());
+// Exposes the socket server to REST controllers that need to broadcast (e.g. bulk mark-as-read).
+app.set('io', io);
 
 app.use('/auth', authRoutes);
 app.use('/api/cases', caseRoutes);

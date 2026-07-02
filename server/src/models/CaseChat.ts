@@ -10,6 +10,9 @@ export interface ICaseChat extends Document {
   caseId: Types.ObjectId;
   customerId: Types.ObjectId;
   caseManagerId: Types.ObjectId;
+  // Denormalized cache of the most recent message's createdAt, so the
+  // conversation list can sort by recent activity without fetching messages.
+  lastMessageAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -19,11 +22,13 @@ const CaseChatSchema = new Schema<ICaseChat>(
     caseId: { type: Schema.Types.ObjectId, ref: 'Case', required: true, unique: true },
     customerId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
     caseManagerId: { type: Schema.Types.ObjectId, ref: 'AdminUser', required: true },
+    lastMessageAt: { type: Date, default: null },
   },
   { timestamps: true, collection: 'case_chats' },
 );
 
 CaseChatSchema.index({ customerId: 1 });
 CaseChatSchema.index({ caseManagerId: 1 });
+CaseChatSchema.index({ lastMessageAt: -1 });
 
 export default model<ICaseChat>('CaseChat', CaseChatSchema);

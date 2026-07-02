@@ -83,16 +83,19 @@ export function registerSocketHandlers(io: Server, socket: Socket): void {
         type,
       });
 
+      caseChat.lastMessageAt = message.createdAt;
+      await caseChat.save();
+
       // Always attach caseId so clients can route the message without a DB lookup
       const wireMessage = toWireMessage(message, caseId);
 
       // Confirm to sender — client replaces its optimistic temp message
       callback?.({ success: true, message: wireMessage, tempId });
 
-      // Broadcast to all others in the case room (recipient sees it in real-time)
-      socket.to(`case:${caseId}`).emit('new-message', wireMessage);
-
-      // Also push to recipient's personal room so notifications land even if they're not in the case view
+      // Push to the recipient's personal room — reaches them whether or not they've
+      // joined this case's room (e.g. new-message badges for cases they haven't opened yet).
+      // Deliberately NOT also broadcasting to `case:${caseId}` — the test harness joins every
+      // case room on login, so the recipient would receive this event twice.
       const recipientId =
         caseChat.customerId.toString() === userId ? caseChat.caseManagerId.toString() : caseChat.customerId.toString();
       socket.to(`user:${recipientId}`).emit('new-message', wireMessage);

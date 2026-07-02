@@ -13,17 +13,17 @@ export default function App() {
 
       {/* Two-panel layout */}
       <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
-        {/* Default ids match the deterministic seed in server/src/seed.ts (run `npm run db:seed`) */}
+        {/* Aliases (cust1, cm1, ...) resolve to the deterministic seed in server/src/seed.ts (run `npm run db:seed`) */}
         <UserPanel
           panelRole="CUSTOMER"
-          defaultUserId="000000000000000000000003"
+          defaultUserId="cust1"
           accentColor="#1a73e8"
           label="Customer"
         />
         <div style={{ width: 2, background: '#cbd5e1', flexShrink: 0 }} />
         <UserPanel
           panelRole="CASE_MANAGER"
-          defaultUserId="000000000000000000000004"
+          defaultUserId="cm1"
           accentColor="#15803d"
           label="Case Manager"
         />
