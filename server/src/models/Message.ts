@@ -22,6 +22,7 @@ export interface IMessage extends Document {
   deliveredAt?: Date | null;
   readAt?: Date | null;
   isDeleted: boolean;
+  replyToMessageId?: Types.ObjectId | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -38,6 +39,7 @@ const MessageSchema = new Schema<IMessage>(
     deliveredAt: { type: Date, default: null },
     readAt: { type: Date, default: null },
     isDeleted: { type: Boolean, required: true, default: false },
+    replyToMessageId: { type: Schema.Types.ObjectId, ref: 'Message', default: null },
   },
   { timestamps: true, collection: 'messages' },
 );

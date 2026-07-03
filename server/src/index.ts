@@ -18,6 +18,13 @@ const httpServer = http.createServer(app);
 
 const io = new Server(httpServer, {
   cors: { origin: CLIENT_ORIGIN, methods: ['GET', 'POST'] },
+  // Lets a client that drops for a short window (idle tab, brief network loss) resume
+  // its rooms + any events broadcast while it was away, instead of starting cold.
+  // Longer gaps fall through to the client's own resync-on-reconnect logic.
+  connectionStateRecovery: {
+    maxDisconnectionDuration: 2 * 60 * 1000,
+    skipMiddlewares: true,
+  },
 });
 
 app.use(cors({ origin: CLIENT_ORIGIN }));

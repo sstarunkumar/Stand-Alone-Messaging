@@ -7,6 +7,14 @@
     <style>
       * { box-sizing: border-box; margin: 0; padding: 0; }
       body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+      @keyframes nos-pulse {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.35; }
+      }
+      @keyframes nos-flash-highlight {
+        0% { box-shadow: 0 0 0 3px rgba(250, 204, 21, 0.85); }
+        100% { box-shadow: 0 1px 2px rgba(0,0,0,0.08); }
+      }
     </style>
   </head>
   <body>

@@ -4,7 +4,7 @@
   "scripts": {
     "setup": "cd server && npm install && npx prisma migrate dev --name init && cd ../test-harness && npm install",
     "server": "cd server && npm run dev",
-    "harness": "cd test-harness && npm run dev",
+    "harness": "cd client && npm run dev",
     "dev": "concurrently -n server,harness -c cyan,magenta \"npm run server\" \"npm run harness\""
   },
   "devDependencies": {

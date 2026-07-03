@@ -1,7 +1,7 @@
 import { Server, Socket } from 'socket.io';
 import { Types } from 'mongoose';
 import { CaseChat, Message } from '../models';
-import { toWireMessage } from '../utils/wireFormat';
+import { toWireMessage, toReplySnapshot } from '../utils/wireFormat';
 import { markUserOnline, markUserOffline } from '../services/presence';
 import { handleMessageAck, handleReadReceipt } from '../services/delivery';
 
@@ -10,6 +10,7 @@ interface SendMessagePayload {
   content: string;
   type?: 'TEXT' | 'FILE' | 'IMAGE';
   tempId?: string;
+  replyToMessageId?: string;
 }
 
 export function registerSocketHandlers(io: Server, socket: Socket): void {
@@ -56,7 +57,7 @@ export function registerSocketHandlers(io: Server, socket: Socket): void {
 
   socket.on('send-message', async (payload: SendMessagePayload, callback?: (res: unknown) => void) => {
     try {
-      const { caseId, content, type = 'TEXT', tempId } = payload;
+      const { caseId, content, type = 'TEXT', tempId, replyToMessageId } = payload;
 
       if (!caseId || !content?.trim() || !Types.ObjectId.isValid(caseId)) {
         callback?.({ error: 'caseId and content are required' });
@@ -75,19 +76,31 @@ export function registerSocketHandlers(io: Server, socket: Socket): void {
         return;
       }
 
+      // Quoted message must exist and belong to this same case — otherwise send the
+      // message anyway, just without the quote, rather than failing the whole send.
+      let replyTarget = null;
+      if (replyToMessageId && Types.ObjectId.isValid(replyToMessageId)) {
+        replyTarget = await Message.findOne({
+          _id: replyToMessageId,
+          caseChatId: caseChat._id,
+          isDeleted: false,
+        });
+      }
+
       const message = await Message.create({
         caseChatId: caseChat._id,
         senderId: userId,
         senderType: role,
         body: content.trim(),
         type,
+        replyToMessageId: replyTarget?._id ?? null,
       });
 
       caseChat.lastMessageAt = message.createdAt;
       await caseChat.save();
 
       // Always attach caseId so clients can route the message without a DB lookup
-      const wireMessage = toWireMessage(message, caseId);
+      const wireMessage = toWireMessage(message, caseId, replyTarget ? toReplySnapshot(replyTarget) : null);
 
       // Confirm to sender — client replaces its optimistic temp message
       callback?.({ success: true, message: wireMessage, tempId });

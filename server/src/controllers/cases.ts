@@ -1,7 +1,7 @@
 import { Request, Response } from 'express';
 import { Types } from 'mongoose';
 import { Case, CaseChat, Message } from '../models';
-import { toWireCaseChat, toWireMessage } from '../utils/wireFormat';
+import { toWireCaseChat, toWireMessage, loadReplySnapshots } from '../utils/wireFormat';
 import { resolveTestId } from '../testAliases';
 
 export async function registerCase(req: Request, res: Response): Promise<void> {
@@ -60,9 +60,18 @@ export async function getCases(req: Request, res: Response): Promise<void> {
         Message.findOne({ caseChatId: chat._id, isDeleted: false }).sort({ createdAt: -1 }),
         Message.countDocuments({ caseChatId: chat._id, senderId: { $ne: userId }, readAt: null, isDeleted: false }),
       ]);
+      const replyMap = lastMessage ? await loadReplySnapshots([lastMessage]) : new Map();
       return {
         ...toWireCaseChat(chat, casesById.get(chat.caseId.toString()), unreadCount),
-        messages: lastMessage ? [toWireMessage(lastMessage, chat.caseId.toString())] : [],
+        messages: lastMessage
+          ? [
+              toWireMessage(
+                lastMessage,
+                chat.caseId.toString(),
+                lastMessage.replyToMessageId ? (replyMap.get(lastMessage.replyToMessageId.toString()) ?? null) : null,
+              ),
+            ]
+          : [],
       };
     }),
   );
@@ -101,9 +110,12 @@ export async function getCaseMessages(req: Request, res: Response): Promise<void
     .limit(limit);
 
   const ordered = messages.slice().reverse();
+  const replyMap = await loadReplySnapshots(ordered);
 
   res.json({
-    data: ordered.map((m) => toWireMessage(m, caseId)),
+    data: ordered.map((m) =>
+      toWireMessage(m, caseId, m.replyToMessageId ? (replyMap.get(m.replyToMessageId.toString()) ?? null) : null),
+    ),
     meta: {
       nextCursor: messages.length === limit ? messages[messages.length - 1].createdAt.toISOString() : null,
     },
