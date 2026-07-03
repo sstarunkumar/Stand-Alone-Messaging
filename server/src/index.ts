@@ -11,13 +11,20 @@ import { cleanupPendingAcks } from './services/delivery';
 import { connectDb, disconnectDb } from './db';
 
 const PORT = Number(process.env.PORT) || 4000;
-const CLIENT_ORIGIN = process.env.CLIENT_ORIGIN || 'http://localhost:5173';
+const IS_PRODUCTION = process.env.NODE_ENV === 'production';
+
+// NOS may serve more than one frontend origin (customer portal, admin panel, ...) —
+// accept a comma-separated allowlist rather than a single hardcoded origin.
+const CLIENT_ORIGINS = (process.env.CLIENT_ORIGIN || 'http://localhost:5173')
+  .split(',')
+  .map((origin) => origin.trim())
+  .filter(Boolean);
 
 const app = express();
 const httpServer = http.createServer(app);
 
 const io = new Server(httpServer, {
-  cors: { origin: CLIENT_ORIGIN, methods: ['GET', 'POST'] },
+  cors: { origin: CLIENT_ORIGINS, methods: ['GET', 'POST'] },
   // Lets a client that drops for a short window (idle tab, brief network loss) resume
   // its rooms + any events broadcast while it was away, instead of starting cold.
   // Longer gaps fall through to the client's own resync-on-reconnect logic.
@@ -27,12 +34,19 @@ const io = new Server(httpServer, {
   },
 });
 
-app.use(cors({ origin: CLIENT_ORIGIN }));
+app.use(cors({ origin: CLIENT_ORIGINS }));
 app.use(express.json());
 // Exposes the socket server to REST controllers that need to broadcast (e.g. bulk mark-as-read).
 app.set('io', io);
 
-app.use('/auth', authRoutes);
+// TEST-ONLY: issues a token for any userId/alias with no real auth check. Fine for the
+// local test harness, but must never be reachable once a real caller (NOS) can mint its
+// own JWTs with the shared secret — otherwise anyone can forge an identity.
+if (IS_PRODUCTION) {
+  console.log('[startup] /auth/token disabled (NODE_ENV=production) — mint JWTs with the shared JWT_SECRET instead');
+} else {
+  app.use('/auth', authRoutes);
+}
 app.use('/api/cases', caseRoutes);
 
 app.get('/health', (_req, res) => {
@@ -78,7 +92,7 @@ async function start(): Promise<void> {
   httpServer.listen(PORT, () => {
     console.log(`\n  NOS Messaging server  →  http://localhost:${PORT}`);
     console.log(`  Socket.IO ready`);
-    console.log(`  Test harness        →  http://localhost:5173\n`);
+    console.log(`  Allowed origins      →  ${CLIENT_ORIGINS.join(', ')}\n`);
   });
 }
 

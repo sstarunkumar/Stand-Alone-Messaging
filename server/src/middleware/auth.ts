@@ -6,6 +6,12 @@
 import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 
+// A missing secret in production would silently fall back to a public, guessable value —
+// fail startup instead so a misconfigured deploy can't run with forgeable tokens.
+if (!process.env.JWT_SECRET && process.env.NODE_ENV === 'production') {
+  throw new Error('JWT_SECRET must be set in production (shared with NOS for signing/verifying tokens)');
+}
+
 export const JWT_SECRET = process.env.JWT_SECRET || 'nos-messaging-test-secret';
 
 export type UserRole = 'CUSTOMER' | 'CASE_MANAGER';
