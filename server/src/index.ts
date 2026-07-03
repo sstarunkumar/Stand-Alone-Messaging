@@ -6,6 +6,7 @@ import cors from 'cors';
 import { verifyToken } from './middleware/auth';
 import authRoutes from './routes/auth';
 import caseRoutes from './routes/cases';
+import adminRoutes from './routes/admin';
 import { registerSocketHandlers } from './socket/handlers';
 import { cleanupPendingAcks } from './services/delivery';
 import { connectDb, disconnectDb } from './db';
@@ -48,6 +49,7 @@ if (IS_PRODUCTION) {
   app.use('/auth', authRoutes);
 }
 app.use('/api/cases', caseRoutes);
+app.use('/api/admin', adminRoutes);
 
 app.get('/health', (_req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });

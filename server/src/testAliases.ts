@@ -6,7 +6,7 @@
  */
 import { Types } from 'mongoose';
 
-export type TestRole = 'CUSTOMER' | 'CASE_MANAGER';
+export type TestRole = 'CUSTOMER' | 'CASE_MANAGER' | 'ADMIN';
 
 export function hexId(n: number): Types.ObjectId {
   return new Types.ObjectId(n.toString(16).padStart(24, '0'));
@@ -14,6 +14,7 @@ export function hexId(n: number): Types.ObjectId {
 
 export const CUSTOMER_ALIASES = ['cust1', 'cust2', 'cust3', 'cust4'] as const;
 export const MANAGER_ALIASES = ['cm1', 'cm2', 'cm3', 'cm4'] as const;
+export const ADMIN_ALIASES = ['adm1', 'adm2'] as const;
 
 export const USER_ALIASES: Record<string, { id: Types.ObjectId; role: TestRole }> = {
   cust1: { id: hexId(11), role: 'CUSTOMER' },
@@ -24,6 +25,8 @@ export const USER_ALIASES: Record<string, { id: Types.ObjectId; role: TestRole }
   cm2: { id: hexId(22), role: 'CASE_MANAGER' },
   cm3: { id: hexId(23), role: 'CASE_MANAGER' },
   cm4: { id: hexId(24), role: 'CASE_MANAGER' },
+  adm1: { id: hexId(31), role: 'ADMIN' },
+  adm2: { id: hexId(32), role: 'ADMIN' },
 };
 
 // Number of cases seeded per customer (2 or 3 each, per product request).

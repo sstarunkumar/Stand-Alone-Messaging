@@ -1,4 +1,5 @@
 import UserPanel from './components/UserPanel';
+import AdminPanel from './components/AdminPanel';
 
 export default function App() {
   return (
@@ -8,12 +9,12 @@ export default function App() {
         <span style={{ fontWeight: 700, fontSize: 15, letterSpacing: -0.3 }}>NOS Messaging</span>
         <span style={{ opacity: 0.3 }}>|</span>
         <span style={{ opacity: 0.55, fontSize: 12 }}>Case-Centric Messaging — Test Harness</span>
-        <div style={{ marginLeft: 'auto', fontSize: 11, opacity: 0.4 }}>Customer (left) · Case Manager (right)</div>
+        <div style={{ marginLeft: 'auto', fontSize: 11, opacity: 0.4 }}>Customer · Case Manager · Admin (oversight)</div>
       </div>
 
-      {/* Two-panel layout */}
+      {/* Three-panel layout */}
       <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
-        {/* Aliases (cust1, cm1, ...) resolve to the deterministic seed in server/src/seed.ts (run `npm run db:seed`) */}
+        {/* Aliases (cust1, cm1, adm1, ...) resolve to the deterministic seed in server/src/seed.ts (run `npm run db:seed`) */}
         <UserPanel
           panelRole="CUSTOMER"
           defaultUserId="cust1"
@@ -27,6 +28,8 @@ export default function App() {
           accentColor="#15803d"
           label="Case Manager"
         />
+        <div style={{ width: 2, background: '#cbd5e1', flexShrink: 0 }} />
+        <AdminPanel />
       </div>
     </div>
   );

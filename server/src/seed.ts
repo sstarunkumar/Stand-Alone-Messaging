@@ -8,7 +8,7 @@ import 'dotenv/config';
 import { connectDb, disconnectDb } from './db';
 import { Role, Service, User, AdminUser, Case, CaseChat } from './models';
 import { CASE_STATUSES } from './models/enums';
-import { CASE_ALIASES, CUSTOMER_ALIASES, MANAGER_ALIASES, USER_ALIASES, hexId } from './testAliases';
+import { ADMIN_ALIASES, CASE_ALIASES, CUSTOMER_ALIASES, MANAGER_ALIASES, USER_ALIASES, hexId } from './testAliases';
 
 const ROLE_ID = hexId(1);
 const SERVICE_ID = hexId(2);
@@ -48,11 +48,12 @@ async function seed(): Promise<void> {
     const customerId = USER_ALIASES[testCase.customerAlias].id;
     const managerId = USER_ALIASES[testCase.managerAlias].id;
     const status = CASE_STATUSES[i % CASE_STATUSES.length];
+    const caseNumber = `CASE-${testCase.alias.toUpperCase()}`;
 
     await Case.findByIdAndUpdate(
       testCase.id,
       {
-        caseNumber: `CASE-${testCase.alias.toUpperCase()}`,
+        caseNumber,
         userId: customerId,
         serviceId: SERVICE_ID,
         kind: 'LAND_NOC',
@@ -62,9 +63,13 @@ async function seed(): Promise<void> {
       { upsert: true, setDefaultsOnInsert: true },
     );
 
+    // caseNumber is denormalized directly onto CaseChat (see registerCase) — this
+    // service has its own database in the real integration, so it can't join against
+    // NOS's real Case collection for a display label the way this seed script's local
+    // Case doc above might suggest.
     await CaseChat.findOneAndUpdate(
       { caseId: testCase.id },
-      { caseId: testCase.id, customerId, caseManagerId: managerId },
+      { caseId: testCase.id, customerId, caseManagerId: managerId, caseNumber },
       { upsert: true, setDefaultsOnInsert: true },
     );
   }
@@ -76,6 +81,8 @@ async function seed(): Promise<void> {
   for (const alias of MANAGER_ALIASES) console.log(`  ${alias.padEnd(6)} (CASE_MANAGER)  -> ${USER_ALIASES[alias].id.toString()}`);
   console.log('\nCases:');
   for (const c of CASE_ALIASES) console.log(`  ${c.alias.padEnd(6)} -> ${c.id.toString()}  customer=${c.customerAlias}  manager=${c.managerAlias}`);
+  console.log('\nAdmins (oversight — no seeded profile document needed, id is used as-is):');
+  for (const alias of ADMIN_ALIASES) console.log(`  ${alias.padEnd(6)} (ADMIN)         -> ${USER_ALIASES[alias].id.toString()}`);
 
   await disconnectDb();
 }

@@ -10,6 +10,10 @@ export interface ICaseChat extends Document {
   caseId: Types.ObjectId;
   customerId: Types.ObjectId;
   caseManagerId: Types.ObjectId;
+  // Denormalized display label supplied by the owning system at provisioning time
+  // (see registerCase) — this service has its own database, so it can't join against
+  // NOS's real Case collection for this; NOS passes whatever it wants shown.
+  caseNumber: string | null;
   // Denormalized cache of the most recent message's createdAt, so the
   // conversation list can sort by recent activity without fetching messages.
   lastMessageAt: Date | null;
@@ -22,6 +26,7 @@ const CaseChatSchema = new Schema<ICaseChat>(
     caseId: { type: Schema.Types.ObjectId, ref: 'Case', required: true, unique: true },
     customerId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
     caseManagerId: { type: Schema.Types.ObjectId, ref: 'AdminUser', required: true },
+    caseNumber: { type: String, default: null },
     lastMessageAt: { type: Date, default: null },
   },
   { timestamps: true, collection: 'case_chats' },

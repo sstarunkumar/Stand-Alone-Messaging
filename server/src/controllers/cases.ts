@@ -1,14 +1,20 @@
 import { Request, Response } from 'express';
 import { Types } from 'mongoose';
-import { Case, CaseChat, Message } from '../models';
+import { CaseChat, Message } from '../models';
 import { toWireCaseChat, toWireMessage, loadReplySnapshots } from '../utils/wireFormat';
 import { resolveTestId } from '../testAliases';
 
 export async function registerCase(req: Request, res: Response): Promise<void> {
-  const { caseId: rawCaseId, customerId: rawCustomerId, caseManagerId: rawCaseManagerId } = req.body as {
+  const {
+    caseId: rawCaseId,
+    customerId: rawCustomerId,
+    caseManagerId: rawCaseManagerId,
+    caseNumber,
+  } = req.body as {
     caseId?: string;
     customerId?: string;
     caseManagerId?: string;
+    caseNumber?: string;
   };
 
   if (!rawCaseId || !rawCustomerId || !rawCaseManagerId) {
@@ -26,16 +32,26 @@ export async function registerCase(req: Request, res: Response): Promise<void> {
     return;
   }
 
-  const caseDoc = await Case.findById(caseId, 'caseNumber');
-
   const existing = await CaseChat.findOne({ caseId });
   if (existing) {
-    res.json({ data: toWireCaseChat(existing, caseDoc?.caseNumber) });
+    // Reassignment support: a case manager (or, less commonly, the customer record)
+    // can change after the chat already exists — keep the chat pointed at whoever
+    // owns the case now instead of silently keeping the original pairing forever.
+    existing.customerId = new Types.ObjectId(customerId);
+    existing.caseManagerId = new Types.ObjectId(caseManagerId);
+    if (caseNumber !== undefined) existing.caseNumber = caseNumber;
+    await existing.save();
+    res.json({ data: toWireCaseChat(existing) });
     return;
   }
 
-  const caseChat = await CaseChat.create({ caseId, customerId, caseManagerId });
-  res.status(201).json({ data: toWireCaseChat(caseChat, caseDoc?.caseNumber) });
+  const caseChat = await CaseChat.create({
+    caseId,
+    customerId,
+    caseManagerId,
+    caseNumber: caseNumber ?? null,
+  });
+  res.status(201).json({ data: toWireCaseChat(caseChat) });
 }
 
 export async function getCases(req: Request, res: Response): Promise<void> {
@@ -44,13 +60,6 @@ export async function getCases(req: Request, res: Response): Promise<void> {
   const chats = await CaseChat.find({
     $or: [{ customerId: userId }, { caseManagerId: userId }],
   }).sort({ lastMessageAt: -1, createdAt: -1 });
-
-  const casesById = new Map(
-    (await Case.find({ _id: { $in: chats.map((c) => c.caseId) } }, 'caseNumber')).map((c) => [
-      c._id.toString(),
-      c.caseNumber,
-    ]),
-  );
 
   const data = await Promise.all(
     chats.map(async (chat) => {
@@ -62,7 +71,7 @@ export async function getCases(req: Request, res: Response): Promise<void> {
       ]);
       const replyMap = lastMessage ? await loadReplySnapshots([lastMessage]) : new Map();
       return {
-        ...toWireCaseChat(chat, casesById.get(chat.caseId.toString()), unreadCount),
+        ...toWireCaseChat(chat, unreadCount),
         messages: lastMessage
           ? [
               toWireMessage(

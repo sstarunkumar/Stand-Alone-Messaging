@@ -14,7 +14,7 @@ if (!process.env.JWT_SECRET && process.env.NODE_ENV === 'production') {
 
 export const JWT_SECRET = process.env.JWT_SECRET || 'nos-messaging-test-secret';
 
-export type UserRole = 'CUSTOMER' | 'CASE_MANAGER';
+export type UserRole = 'CUSTOMER' | 'CASE_MANAGER' | 'ADMIN';
 
 export interface AuthUser {
   userId: string;
@@ -52,4 +52,12 @@ export function verifyToken(token: string): AuthUser | null {
   } catch {
     return null;
   }
+}
+
+export function requireAdmin(req: Request, res: Response, next: NextFunction): void {
+  if (req.user?.role !== 'ADMIN') {
+    res.status(403).json({ error: 'Admin access required' });
+    return;
+  }
+  next();
 }

@@ -305,7 +305,7 @@ export default function ChatView({
                             fontWeight: 700,
                           }}
                         >
-                          {msg.senderRole === "CUSTOMER" ? "C" : "M"}
+                          {msg.senderRole === "CUSTOMER" ? "C" : msg.senderRole === "ADMIN" ? "A" : "M"}
                         </div>
                       )}
                     </div>

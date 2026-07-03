@@ -24,7 +24,7 @@ router.post('/token', (req, res) => {
   const userId = alias ? alias.id.toString() : rawUserId.trim();
   const role = alias ? alias.role : rawRole;
 
-  const validRoles: UserRole[] = ['CUSTOMER', 'CASE_MANAGER'];
+  const validRoles: UserRole[] = ['CUSTOMER', 'CASE_MANAGER', 'ADMIN'];
   if (!role || !validRoles.includes(role as UserRole)) {
     res.status(400).json({ error: 'role must be CUSTOMER or CASE_MANAGER' });
     return;

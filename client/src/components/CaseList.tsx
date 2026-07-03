@@ -28,22 +28,13 @@ interface Props {
   cases: CaseItem[];
   selectedCaseId: string | null;
   unreadByCaseId: Record<string, number>;
-  currentUserId: string;
   currentResolvedUserId: string;
-  currentRole: 'CUSTOMER' | 'CASE_MANAGER';
   accentColor: string;
   onSelectCase: (caseId: string) => void;
-  onAddCase: (caseId: string, customerId: string, caseManagerId: string) => Promise<{ success: boolean; error?: string }>;
 }
 
-export default function CaseList({ cases, selectedCaseId, unreadByCaseId, currentUserId, currentResolvedUserId, currentRole, accentColor, onSelectCase, onAddCase }: Props) {
+export default function CaseList({ cases, selectedCaseId, unreadByCaseId, currentResolvedUserId, accentColor, onSelectCase }: Props) {
   const [search, setSearch] = useState('');
-  const [showForm, setShowForm] = useState(false);
-  const [formCaseId, setFormCaseId] = useState('');
-  const [formCustomerId, setFormCustomerId] = useState(currentRole === 'CUSTOMER' ? currentUserId : '');
-  const [formManagerId, setFormManagerId] = useState(currentRole === 'CASE_MANAGER' ? currentUserId : '');
-  const [formError, setFormError] = useState('');
-  const [adding, setAdding] = useState(false);
 
   function caseTitle(c: CaseItem): string {
     return c.caseNumber ?? c.caseId;
@@ -52,23 +43,6 @@ export default function CaseList({ cases, selectedCaseId, unreadByCaseId, curren
   const filtered = search.trim()
     ? cases.filter(c => caseTitle(c).toLowerCase().includes(search.toLowerCase()))
     : cases;
-
-  async function handleAdd() {
-    if (!formCaseId.trim() || !formCustomerId.trim() || !formManagerId.trim()) {
-      setFormError('All fields are required');
-      return;
-    }
-    setAdding(true);
-    setFormError('');
-    const result = await onAddCase(formCaseId.trim(), formCustomerId.trim(), formManagerId.trim());
-    setAdding(false);
-    if (result.success) {
-      setShowForm(false);
-      setFormCaseId('');
-    } else {
-      setFormError(result.error ?? 'Failed to add case');
-    }
-  }
 
   function lastMsgPreview(lastMsg: Message | undefined, currentUserId: string): string {
     if (!lastMsg) return 'No messages yet';
@@ -83,18 +57,6 @@ export default function CaseList({ cases, selectedCaseId, unreadByCaseId, curren
       <div style={{ padding: '12px 14px 10px', borderBottom: '1px solid #f1f5f9' }}>
         <div style={{ display: 'flex', alignItems: 'center', marginBottom: 10 }}>
           <span style={{ flex: 1, fontWeight: 700, fontSize: 13, color: '#0f172a', letterSpacing: -0.2 }}>Case Conversations</span>
-          <button
-            onClick={() => { setShowForm(v => !v); setFormError(''); }}
-            title={showForm ? 'Cancel' : 'Add case'}
-            style={{
-              width: 26, height: 26, borderRadius: '50%', background: showForm ? '#e2e8f0' : accentColor,
-              border: 'none', color: showForm ? '#475569' : 'white',
-              fontSize: 18, fontWeight: 300, cursor: 'pointer',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-            }}
-          >
-            {showForm ? '×' : '+'}
-          </button>
         </div>
 
         {/* Search */}
@@ -109,31 +71,12 @@ export default function CaseList({ cases, selectedCaseId, unreadByCaseId, curren
         </div>
       </div>
 
-      {/* Add case form */}
-      {showForm && (
-        <div style={{ padding: '10px 14px', borderBottom: '1px solid #e2e8f0', background: '#f8fafc' }}>
-          <div style={{ fontSize: 11, fontWeight: 700, color: '#475569', marginBottom: 8, textTransform: 'uppercase', letterSpacing: 0.5 }}>New Case</div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            <input placeholder="Case ID (e.g. case1, case2, or an ObjectId)" value={formCaseId} onChange={e => setFormCaseId(e.target.value)} style={miniInput} />
-            <input placeholder="Customer ID (e.g. cust1)" value={formCustomerId} onChange={e => setFormCustomerId(e.target.value)} style={miniInput} />
-            <input placeholder="Case Manager ID (e.g. cm1)" value={formManagerId} onChange={e => setFormManagerId(e.target.value)} style={miniInput} />
-            {formError && <div style={{ fontSize: 11, color: '#dc2626' }}>{formError}</div>}
-            <div style={{ display: 'flex', gap: 6, marginTop: 2 }}>
-              <button onClick={() => setShowForm(false)} style={{ ...miniBtn, background: '#e2e8f0', color: '#475569', flex: 1 }}>Cancel</button>
-              <button onClick={handleAdd} disabled={adding} style={{ ...miniBtn, background: accentColor, color: 'white', flex: 2 }}>
-                {adding ? 'Adding…' : 'Add Case'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Case list */}
       <div style={{ flex: 1, overflowY: 'auto' }}>
         {filtered.length === 0 && (
           <div style={{ padding: '32px 14px', textAlign: 'center', color: '#94a3b8', fontSize: 12, lineHeight: 1.6 }}>
             {cases.length === 0
-              ? <>No cases yet.<br />Click <strong>+</strong> to add one.</>
+              ? 'No cases yet — an admin needs to pair you with a case first.'
               : 'No cases match your search'}
           </div>
         )}
@@ -202,13 +145,3 @@ export default function CaseList({ cases, selectedCaseId, unreadByCaseId, curren
     </div>
   );
 }
-
-const miniInput: React.CSSProperties = {
-  padding: '6px 9px', borderRadius: 5, border: '1px solid #e2e8f0',
-  fontSize: 12, width: '100%', outline: 'none', boxSizing: 'border-box',
-};
-
-const miniBtn: React.CSSProperties = {
-  padding: '6px 0', border: 'none', borderRadius: 5,
-  fontSize: 12, fontWeight: 600, cursor: 'pointer',
-};

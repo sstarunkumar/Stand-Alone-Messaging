@@ -14,7 +14,8 @@ interface SendMessagePayload {
 }
 
 export function registerSocketHandlers(io: Server, socket: Socket): void {
-  const { userId, role } = socket.data as { userId: string; role: 'CUSTOMER' | 'CASE_MANAGER' };
+  const { userId, role } = socket.data as { userId: string; role: 'CUSTOMER' | 'CASE_MANAGER' | 'ADMIN' };
+  const isAdmin = role === 'ADMIN';
 
   socket.join(`user:${userId}`);
   markUserOnline(userId, socket.id);
@@ -36,14 +37,19 @@ export function registerSocketHandlers(io: Server, socket: Socket): void {
         return;
       }
 
-      if (caseChat.customerId.toString() !== userId && caseChat.caseManagerId.toString() !== userId) {
+      const isParticipant = caseChat.customerId.toString() === userId || caseChat.caseManagerId.toString() === userId;
+      if (!isParticipant && !isAdmin) {
         socket.emit('error', { code: 'ACCESS_DENIED', message: 'You are not a participant in this case' });
         callback?.({ error: 'Access denied' });
         return;
       }
 
+      // Everyone joins the case room (typing indicators). Admins additionally join a
+      // separate observer room so send-message can broadcast to them without ever
+      // double-delivering to the two real participants (see send-message below).
       socket.join(`case:${caseId}`);
-      console.log(`[ws]   ${userId} joined case:${caseId}`);
+      if (isAdmin) socket.join(`admin-case:${caseId}`);
+      console.log(`[ws]   ${userId} joined case:${caseId}${isAdmin ? ' (admin)' : ''}`);
       callback?.({ success: true });
     } catch (err) {
       console.error('[ws] join-case error:', err);
@@ -53,6 +59,7 @@ export function registerSocketHandlers(io: Server, socket: Socket): void {
 
   socket.on('leave-case', (caseId: string) => {
     socket.leave(`case:${caseId}`);
+    socket.leave(`admin-case:${caseId}`);
   });
 
   socket.on('send-message', async (payload: SendMessagePayload, callback?: (res: unknown) => void) => {
@@ -71,7 +78,8 @@ export function registerSocketHandlers(io: Server, socket: Socket): void {
         return;
       }
 
-      if (caseChat.customerId.toString() !== userId && caseChat.caseManagerId.toString() !== userId) {
+      const isParticipant = caseChat.customerId.toString() === userId || caseChat.caseManagerId.toString() === userId;
+      if (!isParticipant && !isAdmin) {
         callback?.({ error: 'Access denied' });
         return;
       }
@@ -105,15 +113,25 @@ export function registerSocketHandlers(io: Server, socket: Socket): void {
       // Confirm to sender — client replaces its optimistic temp message
       callback?.({ success: true, message: wireMessage, tempId });
 
-      // Push to the recipient's personal room — reaches them whether or not they've
+      // Push to each recipient's personal room — reaches them whether or not they've
       // joined this case's room (e.g. new-message badges for cases they haven't opened yet).
       // Deliberately NOT also broadcasting to `case:${caseId}` — the test harness joins every
-      // case room on login, so the recipient would receive this event twice.
-      const recipientId =
-        caseChat.customerId.toString() === userId ? caseChat.caseManagerId.toString() : caseChat.customerId.toString();
-      socket.to(`user:${recipientId}`).emit('new-message', wireMessage);
+      // case room on login, so a participant recipient would receive this event twice.
+      // When an admin sends (intervening in someone else's conversation), neither of the
+      // two real participants "is" the sender, so both of them are recipients.
+      const recipientIds = isAdmin
+        ? [caseChat.customerId.toString(), caseChat.caseManagerId.toString()]
+        : [
+            caseChat.customerId.toString() === userId
+              ? caseChat.caseManagerId.toString()
+              : caseChat.customerId.toString(),
+          ];
+      recipientIds.forEach((recipientId) => socket.to(`user:${recipientId}`).emit('new-message', wireMessage));
 
-      console.log(`[ws]   msg ${message._id.toString()} in case:${caseId} from ${userId}`);
+      // Any admin currently observing this case (but not the sender themself) gets it live too.
+      socket.to(`admin-case:${caseId}`).emit('new-message', wireMessage);
+
+      console.log(`[ws]   msg ${message._id.toString()} in case:${caseId} from ${userId} (${role})`);
     } catch (err) {
       console.error('[ws] send-message error:', err);
       callback?.({ error: 'Failed to send message' });

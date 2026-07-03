@@ -49,11 +49,11 @@ export async function loadReplySnapshots(messages: IMessage[]): Promise<Map<stri
   return new Map(targets.map((t) => [t._id.toString(), toReplySnapshot(t)]));
 }
 
-export function toWireCaseChat(chat: ICaseChat, caseNumber?: string, unreadCount?: number) {
+export function toWireCaseChat(chat: ICaseChat, unreadCount?: number) {
   return {
     id: chat._id.toString(),
     caseId: chat.caseId.toString(),
-    caseNumber: caseNumber ?? null,
+    caseNumber: chat.caseNumber ?? null,
     customerId: chat.customerId.toString(),
     caseManagerId: chat.caseManagerId.toString(),
     lastMessageAt: chat.lastMessageAt,

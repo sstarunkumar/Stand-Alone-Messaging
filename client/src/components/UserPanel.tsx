@@ -507,28 +507,6 @@ export default function UserPanel({
       socketRef.current?.emit("typing", { caseId: selectedCaseId, isTyping });
   }
 
-  async function addCase(
-    caseId: string,
-    customerId: string,
-    caseManagerId: string,
-  ) {
-    try {
-      await axios.post(
-        `${API_URL}/api/cases`,
-        { caseId, customerId, caseManagerId },
-        { headers: { Authorization: `Bearer ${tokenRef.current}` } },
-      );
-      await refreshCases(tokenRef.current);
-      socketRef.current?.emit("join-case", caseId);
-      return { success: true };
-    } catch (err) {
-      const msg = axios.isAxiosError(err)
-        ? (err.response?.data?.error ?? err.message)
-        : String(err);
-      return { success: false, error: msg };
-    }
-  }
-
   if (view === "login") {
     return (
       <div
@@ -684,12 +662,9 @@ export default function UserPanel({
           cases={cases}
           selectedCaseId={selectedCaseId}
           unreadByCaseId={unreadByCaseId}
-          currentUserId={userId}
           currentResolvedUserId={resolvedUserId}
-          currentRole={role}
           accentColor={accentColor}
           onSelectCase={selectCase}
-          onAddCase={addCase}
         />
         <div
           style={{
